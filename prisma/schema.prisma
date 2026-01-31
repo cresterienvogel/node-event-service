@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EventStatus {
+  PENDING
+  PROCESSING
+  DELIVERED
+  PARTIALLY_DELIVERED
+  DEAD
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  DEAD
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSED
+}
+
+model Event {
+  id        String      @id @default(uuid())
+  eventKey  String      @unique
+  type      String
+  payload   Json
+  status    EventStatus @default(PENDING)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  deliveries Delivery[]
+}
+
+model Subscription {
+  id          String   @id @default(uuid())
+  isEnabled   Boolean  @default(true)
+  endpointUrl String
+  secret      String?
+  eventTypes  String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deliveries Delivery[]
+}
+
+model Delivery {
+  id             String        @id @default(uuid())
+  eventId        String
+  subscriptionId String
+  status         DeliveryStatus @default(PENDING)
+  attempts       Int           @default(0)
+  nextRunAt      DateTime      @default(now())
+  lastError      String?
+  lastStatusCode Int?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  logs         DeliveryLog[]
+  outboxItems   Outbox[]
+
+  @@index([status, nextRunAt])
+  @@index([eventId])
+  @@index([subscriptionId])
+}
+
+model DeliveryLog {
+  id         String   @id @default(uuid())
+  deliveryId String
+  attempt    Int
+  status     DeliveryStatus
+  statusCode Int?
+  error      String?
+  responseTimeMs Int?
+  createdAt  DateTime @default(now())
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryId])
+}
+
+model Outbox {
+  id          String       @id @default(uuid())
+  deliveryId  String
+  availableAt DateTime     @default(now())
+  status      OutboxStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+  processedAt DateTime?
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([status, availableAt])
+  @@index([deliveryId])
+}
